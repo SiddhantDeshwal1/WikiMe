@@ -16,3 +16,14 @@ Build an AI agent that acts as an external memory layer for the user — capturi
 - Store — saved into a persistent, searchable memory
 - Recall — user asks questions later; agent answers from stored memory
 - Manage — user updates/deletes memories via natural language
+
+# Roadmap & Tasks
+
+- [x] **V1_001: Improving the Onboarding**
+  - [x] Standardize git commit format with `GENAI=YES/NO` convention in `RULES.md` and `GEMINI.md`
+  - [x] Establish post-task summary generation (`GIT.md`) and archiving into `docs/history/`
+  - [x] Configure `.gitignore` to ignore root `GIT.md`
+  - [x] Establish sprint tracking workflow (`SPRINT.md`) and task registration policy in `docs/PROGRESS.md`
+  - [x] Add pre-commit policy violation guardrails and task ID validation
+  - [x] Create `git-commit` skill (`.agents/skills/git-commit/SKILL.md`) enforcing pre-commit verification and archiving
+

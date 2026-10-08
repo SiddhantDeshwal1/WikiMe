@@ -71,7 +71,11 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **Plan first, execute sequentially, never skip steps.**
 
-1. **Understand & Clarify:** Thoroughly understand the requirement before taking action. If anything is ambiguous or underspecified, stop and ask the user for clarification first.
+1. **Understand, Check Progress & Clarify:**
+   - **Strict Registration Check:** Inspect `docs/PROGRESS.md`. Every task must exist in `docs/PROGRESS.md` before it can be loaded into `SPRINT.md` or started. If not found, strictly stop and ask the user to register it first.
+   - If a similar task exists, inform the user (e.g., *"Found task V1_005 similar to your request, should I load it into SPRINT.md?"*).
+   - **Assignment Conflict Check:** If `SPRINT.md` already has an active task assigned, ask the user whether to add alongside it, replace it, or complete the current one. If replaced and unfinished, move it back to `docs/PROGRESS.md` with a `NOTE:` explaining what was done and why it was paused (ask user for details).
+   - **Load into `SPRINT.md`:** Load active task into root `SPRINT.md` with mandatory metadata: `Author/Assignee: @siddhantdeshwal1`, `Task ID & Name`, `Started: YYYY-MM-DD HH:MM:SS`, and actionable checkboxes. `SPRINT.md` is never moved to history.
 2. **Create a `plan_*.md` File:** Before touching or modifying any code/files, always create a `plan_<task>.md` file in the working directory:
    - Break the task into distinct **Phases**.
    - Under each phase, list discrete, actionable steps formatted with checkboxes (`- [ ]`).
@@ -81,31 +85,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 4. **Human-in-the-Loop (HITL) on Blockers:**
    - If any issue, implementation blocker, or unexpected behavior arises, stop immediately and ask the user.
    - Never attempt speculative fixes or bypass an uncompleted/failing checkbox.
-5. **Post-Task Summary (`GIT.md`):**
-   - Upon successful completion and verification of the plan, it is the agent's explicit duty to create a `GIT.md` file in the root directory.
-   - Summarize all changes, implementations, touched files, and verification steps from this stage.
-6. **Commit & Archive:**
-   - Read the summary in `GIT.md` to formulate a strong, descriptive commit message following Section 6.
-   - Once committed, move both `plan_*.md` and `GIT.md` into `docs/history/` as required by `RULES.md`.
-
-## 6. Git Commit Format
-
-**Strict commit message convention for developers and agents.**
-
-All commits must strictly follow this format:
-
-```
-GENAI=YES/NO <type>(<scope>): <description>
-```
-
-- **`GENAI=YES`**: Mandatory if any AI tools/assistants were used while changing or generating anything in the codebase.
-- **`GENAI=NO`**: Only when changes were made completely without AI assistance.
-- **Workflow**:
-  1. Read the summary in `GIT.md`.
-  2. Craft a strong, descriptive commit message following this format.
-  3. Commit the changes.
-  4. Move `GIT.md` to `docs/history/`.
-- **Example**: `GENAI=YES feat(auth): add google oauth flow` or `GENAI=NO fix(docs): fix typo in README`
+5. **Post-Task Completion & Commits:**
+   - Once all checkboxes in `plan_*.md` are verified, notify the user of successful completion.
+   - When the user requests to stage, commit, or push changes, invoke the `git-commit` skill to handle task ID validation against `docs/PROGRESS.md`, sprint timestamps in `SPRINT.md`, `GIT.md` change summary generation, strict commit formatting (`GENAI=YES/NO`), committing, and archiving.
 
 ---
 
