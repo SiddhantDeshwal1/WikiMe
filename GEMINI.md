@@ -81,8 +81,31 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 4. **Human-in-the-Loop (HITL) on Blockers:**
    - If any issue, implementation blocker, or unexpected behavior arises, stop immediately and ask the user.
    - Never attempt speculative fixes or bypass an uncompleted/failing checkbox.
-5. **Archive on Completion:**
-   - Once all phases and checkboxes are verified complete, move the `plan_*.md` file to `docs/history/` as required by `RULES.md`.
+5. **Post-Task Summary (`GIT.md`):**
+   - Upon successful completion and verification of the plan, it is the agent's explicit duty to create a `GIT.md` file in the root directory.
+   - Summarize all changes, implementations, touched files, and verification steps from this stage.
+6. **Commit & Archive:**
+   - Read the summary in `GIT.md` to formulate a strong, descriptive commit message following Section 6.
+   - Once committed, move both `plan_*.md` and `GIT.md` into `docs/history/` as required by `RULES.md`.
+
+## 6. Git Commit Format
+
+**Strict commit message convention for developers and agents.**
+
+All commits must strictly follow this format:
+
+```
+GENAI=YES/NO <type>(<scope>): <description>
+```
+
+- **`GENAI=YES`**: Mandatory if any AI tools/assistants were used while changing or generating anything in the codebase.
+- **`GENAI=NO`**: Only when changes were made completely without AI assistance.
+- **Workflow**:
+  1. Read the summary in `GIT.md`.
+  2. Craft a strong, descriptive commit message following this format.
+  3. Commit the changes.
+  4. Move `GIT.md` to `docs/history/`.
+- **Example**: `GENAI=YES feat(auth): add google oauth flow` or `GENAI=NO fix(docs): fix typo in README`
 
 ---
 
