@@ -3,7 +3,7 @@
 - **Author/Assignee:** @siddhantdeshwal1
 - **Task:** V1_001 - Improving the Onboarding
 - **Started:** 2026-10-08 21:30:00
-- **Finished:** 2026-10-08 22:47:30
+- **Finished:** 2026-10-10 12:36:00
 
 ## Checkpoints
 - [x] Standardize git commit format with `GENAI=YES/NO` convention in `RULES.md` and `GEMINI.md`

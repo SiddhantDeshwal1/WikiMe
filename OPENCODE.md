@@ -1,4 +1,4 @@
-# GEMINI.md
+# OPENCODE.md
 
 - **Mandatory:** Read the `RULES.md` file first and follow all the rules mentioned in it.
 
