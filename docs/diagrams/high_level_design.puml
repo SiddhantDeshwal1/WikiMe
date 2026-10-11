@@ -1,0 +1,106 @@
+@startuml EBrain_System_Architecture
+!theme plain
+skinparam componentStyle uml2
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam roundCorner 8
+skinparam linetype ortho
+
+title E-Brain: Multi-Layer System Architecture Specification
+
+package "1. Frontend Layer (Client Mobile App)" as L1_Frontend {
+    [OS Share Sheet Target\n(ShareTargetModule)] as FE_Share
+    [Chat Stream View\n(ChatStreamView - SSE)] as FE_Chat
+    [Quick Thought Input\n(ManualNoteWidget)] as FE_Note
+    [Dead Reports Dashboard\n(TriageDashboard)] as FE_Triage
+}
+
+package "2. Backend / Broker Layer" as L2_Backend {
+    [API Gateway\n(FastAPI / Node.js)] as BE_Gateway
+    
+    database "Redis Engine" as BE_Redis {
+        queue "media-ingestion-queue" as Q_Ingest
+        queue "dlq-failed-ingestion" as Q_DLQ
+        database "Session Store\n(chat:history:{uid}:{sid})" as R_Session
+    }
+    
+    [Queue Task Dispatcher\n(queue-dispatcher)] as BE_Dispatcher
+}
+
+package "3. Microservice Layer (Extraction Pipeline)" as L3_Microservices {
+    interface "gRPC Server\n(MediaExtractor.proto)" as MS_gRPC
+    [YouTube Worker\n(yt-dlp Transcripts)] as W_YT
+    [Social Worker\n(IG / TikTok Scraper APIs)] as W_Social
+    [Web Article Worker\n(Firecrawl / Readability)] as W_Web
+    [DLQ Coordinator\n(dlq-handler)] as MS_DLQ
+}
+
+package "4. AI Layer (Gateway, Processing & Reasoning)" as L4_AI {
+    [AI Gateway\n(LiteLLM Proxy Router)] as AI_Gateway
+    [AI Structurer &\nHyDE Generator] as AI_Structurer
+    [Query Condenser\n(Coreference Resolver)] as AI_Condenser
+    [Jev Discriminative Filter\n(Noul Binary/Score)] as AI_Jev
+    [Streaming Synthesizer\n(SLM / vLLM / Groq)] as AI_Synthesizer
+}
+
+package "5. Database Layer (Vectors & Payloads)" as L5_DB {
+    interface "VectorStore Repository\n(Repository Pattern)" as DB_Repo
+    database "Vector DB (RAM + NVMe)\n(Pinecone / Qdrant)" as DB_Vector
+}
+
+' --- FLOW A: INGESTION PIPELINE ---
+FE_Share --> BE_Gateway : 1. POST /api/v1/ingest (SharePayloadDTO)
+FE_Note --> BE_Gateway : 1. POST /api/v1/ingest (ManualNoteDTO)
+BE_Gateway ..> FE_Share : 2. 202 Accepted (Instant)
+BE_Gateway --> Q_Ingest : 3. LPUSH QueueJobMessage
+
+Q_Ingest --> BE_Dispatcher : 4. Pop Job
+BE_Dispatcher --> MS_gRPC : 5. rpc ExtractMedia()
+
+MS_gRPC --> W_YT : Match youtube.com
+MS_gRPC --> W_Social : Match instagram.com / tiktok
+MS_gRPC --> W_Web : Default URL
+
+W_YT --> AI_Gateway : 6. Raw Transcripts (HTTP/2)
+W_Social --> AI_Gateway : 6. Captions & OCR Text
+W_Web --> AI_Gateway : 6. Clean Markdown
+
+AI_Gateway --> AI_Structurer : 7. Normalize Schema
+AI_Structurer --> AI_Gateway : 8. JSON + 3-5 HyDE Queries
+AI_Gateway --> DB_Repo : 9. Embeddings (1536-dim)
+DB_Repo --> DB_Vector : 10. Upsert Vector + Metadata\n(user_id isolation, status: INDEXED)
+
+' --- FLOW B: CHAT RETRIEVAL & SSE STREAMING ---
+FE_Chat --> BE_Gateway : 1. POST /api/v1/chat (Query + session_id)
+BE_Gateway <--> R_Session : 2. Fetch/Save Sliding History (Last 5)
+BE_Gateway --> AI_Gateway : 3. History + Query
+AI_Gateway --> AI_Condenser : 4. Coreference Resolution
+AI_Condenser --> DB_Repo : 5. Standalone Vector Query
+
+DB_Repo --> DB_Vector : 6. Search (Filter: user_id == uid)
+DB_Vector --> DB_Repo : 7. Top 20 Candidates
+DB_Repo --> AI_Jev : 8. Evaluate Candidates (Top 20)
+AI_Jev --> AI_Gateway : 9. Filtered Valid Chunks (Top 5, score >= 0.8)
+
+AI_Gateway --> AI_Synthesizer : 10. Chunks + History Prompt
+AI_Synthesizer --> BE_Gateway : 11. Chunked Stream
+BE_Gateway --> FE_Chat : 12. SSE Stream (text/event-stream)
+
+' --- FLOW C: MEMORY DELETION TOOL CALL ---
+AI_Synthesizer ..> BE_Gateway : Tool Call: delete_memory(topic)
+BE_Gateway ..> FE_Chat : Confirm Dialog Prompt
+FE_Chat ..> BE_Gateway : POST /api/v1/actions/confirm
+BE_Gateway ..> DB_Repo : Delete by Metadata (user_id + search_term)
+DB_Repo ..> DB_Vector : Purge Vectors
+
+' --- FLOW D: SCRAPE FAILURE & DEAD REPORTS ---
+MS_gRPC --> Q_DLQ : Retries >= 3 (Rate-limit / 404)
+Q_DLQ --> MS_DLQ : Consume Failure
+MS_DLQ --> DB_Repo : Upsert Failure Stub
+DB_Repo --> DB_Vector : Save (status: SCRAPE_FAILED)
+FE_Triage <--> BE_Gateway : GET /api/v1/dead-reports
+FE_Triage --> BE_Gateway : POST /api/v1/dead-reports/:id/resolve\n(Manual text paste -> Re-index)
+
+@enduml
