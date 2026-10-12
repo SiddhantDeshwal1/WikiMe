@@ -53,24 +53,25 @@ package "5. Database Layer (Vectors & Payloads)" as L5_DB {
 ' --- FLOW A: INGESTION PIPELINE ---
 FE_Share --> BE_Gateway : 1. POST /api/v1/ingest (SharePayloadDTO)
 FE_Note --> BE_Gateway : 1. POST /api/v1/ingest (ManualNoteDTO)
-BE_Gateway ..> FE_Share : 2. 202 Accepted (Instant)
-BE_Gateway --> Q_Ingest : 3. LPUSH QueueJobMessage
+BE_Gateway ..> DB_Repo : 2. Idempotency Check (canonical_url + user_id)
+BE_Gateway ..> FE_Share : 3. 202 Accepted (Instant toast: "Saved!")
+BE_Gateway --> Q_Ingest : 4. LPUSH QueueJobMessage (canonical_url)
 
-Q_Ingest --> BE_Dispatcher : 4. Pop Job
-BE_Dispatcher --> MS_gRPC : 5. rpc ExtractMedia()
+Q_Ingest --> BE_Dispatcher : 5. Pop Job
+BE_Dispatcher --> MS_gRPC : 6. rpc ExtractMedia() (Zero Video Download)
 
 MS_gRPC --> W_YT : Match youtube.com
 MS_gRPC --> W_Social : Match instagram.com / tiktok
 MS_gRPC --> W_Web : Default URL
 
-W_YT --> AI_Gateway : 6. Raw Transcripts (HTTP/2)
-W_Social --> AI_Gateway : 6. Captions & OCR Text
-W_Web --> AI_Gateway : 6. Clean Markdown
+W_YT --> AI_Gateway : 7. Raw Transcripts (HTTP/2)
+W_Social --> AI_Gateway : 7. Captions & Scraped Text
+W_Web --> AI_Gateway : 7. Clean Markdown
 
-AI_Gateway --> AI_Structurer : 7. Normalize Schema
-AI_Structurer --> AI_Gateway : 8. JSON + 3-5 HyDE Queries
-AI_Gateway --> DB_Repo : 9. Embeddings (1536-dim)
-DB_Repo --> DB_Vector : 10. Upsert Vector + Metadata\n(user_id isolation, status: INDEXED)
+AI_Gateway --> AI_Structurer : 8. Normalize Schema + Overlapping Chunks (300-500t)
+AI_Structurer --> AI_Gateway : 9. Summary + Chunks + 3-5 HyDE Queries
+AI_Gateway --> DB_Repo : 10. Multi-Vector Embeddings (Summary, Chunks, HyDE)
+DB_Repo --> DB_Vector : 11. Upsert Child Vectors\n(linked by item_id, user_id isolation, status: INDEXED)
 
 ' --- FLOW B: CHAT RETRIEVAL & SSE STREAMING ---
 FE_Chat --> BE_Gateway : 1. POST /api/v1/chat (Query + session_id)
@@ -81,8 +82,9 @@ AI_Condenser --> DB_Repo : 5. Standalone Vector Query
 
 DB_Repo --> DB_Vector : 6. Search (Filter: user_id == uid)
 DB_Vector --> DB_Repo : 7. Top 20 Candidates
-DB_Repo --> AI_Jev : 8. Evaluate Candidates (Top 20)
-AI_Jev --> AI_Gateway : 9. Filtered Valid Chunks (Top 5, score >= 0.8)
+DB_Repo --> DB_Repo : 8. Deduplicate hits by item_id & fetch Parent JSON
+DB_Repo --> AI_Jev : 9. Evaluate Parent Candidates (Top Chunks)
+AI_Jev --> AI_Gateway : 10. Filtered Valid Chunks (Top 5, score >= 0.8)
 
 AI_Gateway --> AI_Synthesizer : 10. Chunks + History Prompt
 AI_Synthesizer --> BE_Gateway : 11. Chunked Stream
