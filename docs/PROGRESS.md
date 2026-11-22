@@ -1747,3 +1747,11 @@ A secure, collaborative enterprise second brain where organizations can create t
   - [x] Create services/ directory structure with 4 target folders: wikime-web, wikime-backend, wikime-ai, wikime-db
   - [x] Bind / clone frontend repository (git@github.com:SiddhantDeshwal1/wikime-web.git) into services/wikime-web
   - [x] Configure root local developer orchestration (docker-compose.yml) for shared infrastructure
+
+- [x] **V1_008: Layer Documentation Transfer & Infrastructure Cleanup**
+  - [x] Remove premature root docker-compose.yml and .env.example
+  - [x] Author wikime-web documentation pack under services/wikime-web/docs/
+  - [x] Author wikime-backend documentation pack under services/wikime-backend/docs/
+  - [x] Author wikime-ai documentation pack under services/wikime-ai/docs/
+  - [x] Author wikime-db documentation pack under services/wikime-db/docs/
+  - [x] Verify cross-service schema consistency, commit child/workspace changes, and archive plan
