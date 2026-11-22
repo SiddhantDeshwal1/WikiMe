@@ -10,26 +10,30 @@ skinparam linetype ortho
 
 title E-Brain: Multi-Layer System Architecture Specification
 
-package "1. Frontend Layer (Client Mobile App)" as L1_Frontend {
-    [OS Share Sheet Target\n(ShareTargetModule)] as FE_Share
-    [Chat Stream View\n(ChatStreamView - SSE)] as FE_Chat
-    [Quick Thought Input\n(ManualNoteWidget)] as FE_Note
-    [Dead Reports Dashboard\n(TriageDashboard)] as FE_Triage
+package "1. Presentation Layer (wikime-web & wikime-mobile)" as L1_Frontend {
+    [Web Chat & Stream View\n(ChatStreamView - SSE)\nwikime-web (MVP)] as FE_Chat
+    [Quick Capture Bar\n(QuickCaptureBar)\nwikime-web (MVP)] as FE_Note
+    [Dead Reports Dashboard\n(TriageDashboard)\nwikime-web (MVP)] as FE_Triage
+    [Conflict Resolution Modal\n(ConflictResolutionModal)\nwikime-web (MVP)] as FE_Conflict
+    [OS Share Sheet Target\n(ShareTargetModule)\nwikime-mobile (Stage 3)] as FE_Share
 }
 
-package "2. Backend / Broker Layer" as L2_Backend {
+package "2. Backend / Broker Layer (wikime-backend)" as L2_Backend {
     [API Gateway\n(FastAPI / Node.js)] as BE_Gateway
+    [PII Scrubber & Vault\n(Microsoft Presidio)] as BE_PII
     
     database "Redis Engine" as BE_Redis {
         queue "media-ingestion-queue" as Q_Ingest
         queue "dlq-failed-ingestion" as Q_DLQ
+        queue "audit-events-queue" as Q_Audit
         database "Session Store\n(chat:history:{uid}:{sid})" as R_Session
+        database "Semantic Query Cache\n(idx:semantic_cache - HNSW)" as R_Cache
     }
     
     [Queue Task Dispatcher\n(queue-dispatcher)] as BE_Dispatcher
 }
 
-package "3. Microservice Layer (Extraction Pipeline)" as L3_Microservices {
+package "3. Microservice Layer (wikime-extractor - Stage 2)" as L3_Microservices {
     interface "gRPC Server\n(MediaExtractor.proto)" as MS_gRPC
     [YouTube Worker\n(yt-dlp Transcripts)] as W_YT
     [Social Worker\n(IG / TikTok Scraper APIs)] as W_Social
@@ -37,24 +41,29 @@ package "3. Microservice Layer (Extraction Pipeline)" as L3_Microservices {
     [DLQ Coordinator\n(dlq-handler)] as MS_DLQ
 }
 
-package "4. AI Layer (Gateway, Processing & Reasoning)" as L4_AI {
+package "4. AI Layer (wikime-ai)" as L4_AI {
     [AI Gateway\n(LiteLLM Proxy Router)] as AI_Gateway
     [AI Structurer &\nHyDE Generator] as AI_Structurer
+    [Conflict & Overlap Evaluator\n(k-NN Probe + NLI Contradiction)] as AI_Conflict
+    [Pre-Retrieval Intent Classifier\n(Tier 0 Regex + ONNX)] as AI_Intent
     [Query Condenser\n(Coreference Resolver)] as AI_Condenser
     [Jev Discriminative Filter\n(Noul Binary/Score)] as AI_Jev
+    [Dynamic Complexity Router\n(Fast SLM vs Frontier LLM)] as AI_Router
+    [Llama Guard 3 & Prompt Guard\n(Safety & Canary Gate)] as AI_Guard
     [Streaming Synthesizer\n(SLM / vLLM / Groq)] as AI_Synthesizer
 }
 
-package "5. Database Layer (Vectors & Payloads)" as L5_DB {
-    interface "VectorStore Repository\n(Repository Pattern)" as DB_Repo
-    database "Vector DB (RAM + NVMe)\n(Pinecone / Qdrant)" as DB_Vector
+package "5. Database Layer (wikime-db Shared Package)" as L5_DB {
+    interface "VectorStore Repository\n(Repository Pattern + RBAC Filter)" as DB_Repo
+    database "Vector DB (RAM + NVMe)\n(Pinecone / Qdrant with ACL Metadata)" as DB_Vector
+    database "Audit Logs (Append-Only)\n(PostgreSQL / ClickHouse)" as DB_Audit
 }
 
 ' --- FLOW A: INGESTION PIPELINE ---
-FE_Share --> BE_Gateway : 1. POST /api/v1/ingest (SharePayloadDTO)
-FE_Note --> BE_Gateway : 1. POST /api/v1/ingest (ManualNoteDTO)
+FE_Note --> BE_Gateway : 1. POST /api/v1/ingest (QuickCaptureBar / ManualNote)
+FE_Share ..> BE_Gateway : 1a. POST /api/v1/ingest (SharePayloadDTO - Mobile)
 BE_Gateway ..> DB_Repo : 2. Idempotency Check (canonical_url + user_id)
-BE_Gateway ..> FE_Share : 3. 202 Accepted (Instant toast: "Saved!")
+BE_Gateway ..> FE_Note : 3. 202 Accepted (Instant confirmation)
 BE_Gateway --> Q_Ingest : 4. LPUSH QueueJobMessage (canonical_url)
 
 Q_Ingest --> BE_Dispatcher : 5. Pop Job
@@ -104,5 +113,31 @@ MS_DLQ --> DB_Repo : Upsert Failure Stub
 DB_Repo --> DB_Vector : Save (status: SCRAPE_FAILED)
 FE_Triage <--> BE_Gateway : GET /api/v1/dead-reports
 FE_Triage --> BE_Gateway : POST /api/v1/dead-reports/:id/resolve\n(Manual text paste -> Re-index)
+
+' --- FLOW E: PRE-COMMIT CONFLICT & OVERLAP RESOLUTION ---
+AI_Structurer --> AI_Conflict : A. Candidate Summary Vector
+AI_Conflict ..> DB_Repo : B. k-NN Probe (user_id + summary)
+AI_Conflict --> BE_Gateway : C. Collision Detected (100% / 80-95% / Contradiction)
+BE_Gateway --> DB_Repo : D. Upsert Staged Record (status: PENDING_CONFLICT_RESOLUTION)
+FE_Conflict <--> BE_Gateway : E. GET /api/v1/conflicts (Review side-by-side)
+FE_Conflict --> BE_Gateway : F. POST /api/v1/conflicts/:id/resolve\n(OVERWRITE / DUPLICATE / MERGE / DISCARD)
+BE_Gateway --> DB_Repo : G. Apply Resolution Policy & Mark INDEXED
+
+' --- FLOW F: GUARDED, CACHED & DYNAMICALLY ROUTED RETRIEVAL ---
+FE_Chat --> BE_Gateway : 1. POST /api/v1/chat (Query + JWT + workspace_id)
+BE_Gateway --> AI_Guard : 2. Ingress Safety Check (Prompt Guard + Llama Guard 3)
+AI_Guard --> AI_Intent : 3. Intent Classification (<50ms)
+AI_Intent ..> R_Cache : 4. Probe Semantic Cache (Cosine >= 0.95)
+R_Cache ..> FE_Chat : 4a. [Cache Hit] Replay Instant Response (<15ms, $0)
+AI_Intent --> AI_Condenser : 4b. [Cache Miss] Condense Query
+AI_Condenser --> DB_Repo : 5. Vector Query with ACL Filter (org_id + workspace_id)
+DB_Repo --> AI_Jev : 6. Candidate Verification (Noul >= 0.80)
+AI_Jev --> AI_Router : 7. Compute Complexity Score C
+AI_Router --> AI_Synthesizer : 8a. Low/Med C -> Fast SLM (Groq / vLLM Llama 3.1 8B)
+AI_Router --> AI_Gateway : 8b. High C -> Frontier Model (Claude 3.5 Sonnet / GPT-4o)
+AI_Synthesizer --> AI_Guard : 9. Egress Canary & Safety Stream Interceptor
+AI_Guard --> FE_Chat : 10. Verified SSE Stream (text/event-stream)
+BE_Gateway --> Q_Audit : 11. Async Audit Event (SHA-256 Chained)
+Q_Audit --> DB_Audit : 12. Persist Audit Record
 
 @enduml
