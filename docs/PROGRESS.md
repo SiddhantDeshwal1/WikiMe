@@ -1755,3 +1755,12 @@ A secure, collaborative enterprise second brain where organizations can create t
   - [x] Author wikime-ai documentation pack under services/wikime-ai/docs/
   - [x] Author wikime-db documentation pack under services/wikime-db/docs/
   - [x] Verify cross-service schema consistency, commit child/workspace changes, and archive plan
+
+- [x] **V1_009: Governance Rules Distribution & Remote Git Push**
+  - [x] Push parent WikiMe workspace commits to origin main on GitHub
+  - [x] Distribute RULES.md, GEMINI.md, SPRINT.md, git-commit skill, and .gitignore to wikime-web
+  - [x] Commit and push wikime-web repository to origin main
+  - [x] Distribute governance files, initialize git (git init -b main), and commit in wikime-backend
+  - [x] Distribute governance files, initialize git (git init -b main), and commit in wikime-ai
+  - [x] Distribute governance files, initialize git (git init -b main), and commit in wikime-db
+  - [x] Audit multi-repo git status and push states
