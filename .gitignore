@@ -1,2 +1,19 @@
 # Temporary commit change summary file
 GIT.md
+
+# Decoupled nested service repositories
+/services/*
+!/services/.gitkeep
+
+# Environment & Secret Files
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Caches & OS
+.DS_Store
+Thumbs.db
+*.log

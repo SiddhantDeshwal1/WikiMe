@@ -1239,6 +1239,167 @@ Environments are dynamic configurations applied to an identical codebase across 
 
 ---
 
+### 8.6 Local Workspace & Multi-Repo Development Workflow (Pattern A: Central Workspace / Umbrella Model)
+
+To balance the architectural purity of isolated multi-repositories with the day-to-day productivity of engineers, WikiMe adopts **Pattern A: Central Workspace / Umbrella Model**. 
+
+Rather than forcing developers to juggle separate terminal windows, disparate IDE instances, and conflicting local Docker stacks for each service, the central `WikiMe/` repository acts as the master developer hub and local orchestration control plane.
+
+```
++---------------------------------------------------------------------------------------------------+
+|                        CENTRAL WORKSPACE / UMBRELLA ARCHITECTURE (WikiMe/)                        |
++---------------------------------------------------------------------------------------------------+
+|  WikiMe/ (Umbrella Hub - Git: WikiMe)                                                             |
+|  ├── docs/                     <-- Single Source of Truth (Specs, Schemas, Roadmap, History)       |
+|  ├── SPRINT.md & plan_*.md     <-- Active Task Execution & Sprint Checkpoints                     |
+|  ├── docker-compose.yml        <-- Unified Shared Infrastructure (Postgres, Qdrant, Redis Stack)  |
+|  ├── .env.example              <-- Master Environment Configuration & Port Manifest               |
+|  ├── .gitignore                <-- Boundary Isolation: Ignores /services/*                        |
+|  └── services/                 <-- Decoupled Child Repositories Container                         |
+|      ├── .gitkeep              <-- Preserves empty directory in Umbrella Git                      |
+|      ├── wikime-web/           <-- Child Git Repo (git@github.com:.../wikime-web.git)             |
+|      ├── wikime-backend/       <-- Child Git Repo (git@github.com:.../wikime-backend.git)         |
+|      ├── wikime-ai/            <-- Child Git Repo (git@github.com:.../wikime-ai.git)              |
+|      └── wikime-db/            <-- Child Git Repo (git@github.com:.../wikime-db.git)              |
++---------------------------------------------------------------------------------------------------+
+```
+
+---
+
+#### 8.6.1 The Umbrella Workspace Pattern
+
+The Umbrella Workspace pattern establishes `WikiMe/` as the parent administrative hub containing shared governance, documentation, cross-service orchestrations, and container definitions, while housing each microservice under `services/<service-name>`.
+
+| Component / Path | Scope & Purpose | Git Responsibility |
+| :--- | :--- | :--- |
+| **`WikiMe/` (Root)** | Workspace orchestration, unified docker-compose, root scripts, governance. | Tracked by `WikiMe` git repository. |
+| **`docs/`** | System architecture, data flow diagrams, task registry, ADRs, sprint history. | Tracked by `WikiMe` git repository (SSOT). |
+| **`SPRINT.md` & `plan_*.md`** | Active sprint lifecycle, task verification checklists, pre-commit validations. | Tracked by `WikiMe` git repository. |
+| **`docker-compose.yml`** | Local orchestration of shared infrastructure (PostgreSQL, Qdrant, Redis Stack). | Tracked by `WikiMe` git repository. |
+| **`services/`** | Container directory hosting the isolated child git repositories. | Directory skeleton tracked via `services/.gitkeep`. |
+| **`services/<repo>/`** | Individual autonomous microservices (`wikime-web`, `wikime-backend`, etc.). | Tracked exclusively by their respective child git repositories. |
+
+---
+
+#### 8.6.2 Git Boundary Isolation & The `.gitignore` Decoupling Model
+
+To guarantee true independence between services without running into git conflicts, the umbrella repository enforces strict **Git boundary isolation** via the root `.gitignore`:
+
+```gitignore
+# -----------------------------------------------------------------------------
+# Git Boundary Isolation: Child Service Repositories
+# -----------------------------------------------------------------------------
+# Ignore all child microservice code trees to allow independent git tracking
+/services/*
+# Preserve the directory structure in the umbrella repository
+!/services/.gitkeep
+```
+
+##### Why Boundary Isolation via `.gitignore` Outperforms Git Submodules & Subtrees
+
+Many enterprise teams initially attempt to link multi-repos via `git submodule` or `git subtree`. WikiMe explicitly rejects submodules in favor of `.gitignore` boundary isolation for the following reasons:
+
+1. **Elimination of the "Detached HEAD" Hazard**:
+   - *Submodule Pitfall*: Git submodules link to specific commit hashes rather than active branches. Checking out a parent repo frequently drops child submodules into a `detached HEAD` state. Unsuspecting engineers commit work locally, switch parent branches, and lose unreferenced child commits.
+   - *Boundary Isolation*: Each child repo inside `services/<repo>` is a standard, fully functional clone. Developers switch branches (`git checkout feature/xyz`), rebase, and commit with standard git behavior.
+
+2. **Zero Commit Lockstep & Pointer Drift**:
+   - *Submodule Pitfall*: In submodule setups, committing changes in `services/wikime-web` requires a secondary "pointer update" commit in the parent repository. If multiple engineers push child changes simultaneously, the parent repository suffers perpetual merge conflicts on submodule SHA pointers.
+   - *Boundary Isolation*: Child repo commits, PRs, and tags are pushed directly to their own remotes (`origin/main`). The parent workspace remains clean and unaffected.
+
+3. **No Accidental Nested Staging**:
+   - If an inner directory containing `.git` is tracked by an unconfigured outer repo, git treats it as an untracked git link (dirty gitlink error: `fatal: Pathspec 'services/wikime-web' is in submodule, but not in .gitmodules`).
+   - The `/services/*` rule guarantees git will never stage or pollute umbrella commits with child repository files.
+
+4. **CI/CD Independence**:
+   - Cloud deployment pipelines (e.g., GitHub Actions building `wikime-ai` container images) clone only `wikime-ai` without needing access tokens or clone overhead for the umbrella repo or unrelated sibling microservices.
+
+---
+
+#### 8.6.3 The Single Source of Truth (SSOT) Rule
+
+To eliminate documentation fragmentation and specification drift across distributed repositories:
+
+> **The Single Source of Truth Rule**:
+> All system architecture specifications, high-level data models, network protocol definitions, unified API schemas, cross-cutting task registries (`docs/PROGRESS.md`), and active sprint tracking (`SPRINT.md`) live **exclusively** in the umbrella `WikiMe/` repository. Specifications MUST NEVER be duplicated across child microservice repositories.
+
+##### Technical Rationale for Centralized Specifications:
+
+1. **Prevention of Architectural Drift & Contract Divergence**:
+   - When inter-service contracts change (e.g., modifying the gRPC payload between `wikime-backend` and `wikime-ai`), updating specs across four disparate repositories inevitably results in stale documentation, version mismatch, and implementation bugs.
+   - A single document (`docs/PROGRESS.md`) specifies all interfaces, ensuring frontend, backend, and AI engineers reference the identical contract.
+
+2. **Lean Child Repositories**:
+   - Child repositories focus solely on execution: application source code, unit and integration tests, Dockerfiles, and package manifests.
+   - Child `README.md` files remain minimal (typically $<50$ lines), providing only local runtime commands, environment variable requirements, and a direct hyperlink pointing to `WikiMe/docs/PROGRESS.md` for architectural context.
+
+3. **Centralized Task Auditing & Progress Tracking**:
+   - All system features (`V1_001` through `V1_025+`) are registered, prioritized, and tracked in `WikiMe/docs/PROGRESS.md`.
+   - Sprint execution states and verification checklists are governed centrally in `WikiMe/SPRINT.md`, preventing split sprint logs across child repositories.
+
+---
+
+#### 8.6.4 Unified Local Developer Workflow
+
+The umbrella model provides a unified local development workflow that replicates the convenience of a monorepo while preserving the deployment autonomy of a multi-repo:
+
+##### 1. Single IDE Window Multi-Repo Management
+- **Unified Editor Context**: Engineers open the root `WikiMe/` directory in their code editor (e.g., VS Code, Cursor).
+- **Global Cross-Cutting Search & Navigation**: Developers can trace an incoming HTTP request in `services/wikime-web`, inspect its gateway handler in `services/wikime-backend`, jump to the gRPC handler in `services/wikime-ai`, and review the DB schema in `services/wikime-db`—all within one workspace window.
+- **Native Multi-Root Git Support**: Modern editors automatically detect `.git` folders in child directories. Developers can review diffs, stage files, switch branches, and push commits to child repositories independently via the IDE Source Control interface without terminal hopping.
+
+##### 2. Unified Infrastructure Orchestration via Root `docker-compose.yml`
+Instead of each microservice defining its own divergent Postgres, Redis, or Qdrant containers, the root `WikiMe/docker-compose.yml` provides the single shared infrastructure layer for the entire local environment:
+
+- **PostgreSQL 16**: Exposing port `5432` with shared credentials for relational schemas, tenancy, and cryptographic audit logs.
+- **Qdrant Vector DB**: Exposing port `6333` (HTTP REST) and port `6334` (Internal gRPC) for HNSW vector collections.
+- **Redis Stack (with RediSearch & RedisJSON)**: Exposing port `6379` (RESP3 protocol) and port `8001` (RedisInsight GUI) for BullMQ ingestion queues, semantic vector caching, and sliding session state.
+- **Network Bridge (`wikime-network`)**: Enables smooth service-to-service DNS resolution and shared persistent volumes (`postgres_data`, `qdrant_data`, `redis_data`) so local state persists across container restarts.
+
+##### 3. Developer Lifecycle: Step-by-Step Daily Routine
+
+```mermaid
+flowchart TD
+    A["Open WikiMe/ in IDE"] --> B["Start Shared Infra: docker compose up -d"]
+    B --> C["Review SPRINT.md & docs/PROGRESS.md"]
+    C --> D["Navigate to Target Service (cd services/wikime-web)"]
+    D --> E["Create Feature Branch (git checkout -b feat/...)"]
+    E --> F["Implement Code & Run Unit Tests Locally"]
+    F --> G["Commit & Push in Child Repo (git push origin feat/...)"]
+    G --> H["Update SPRINT.md / PROGRESS.md in WikiMe Root"]
+    H --> I["Commit Workspace State in WikiMe (git-commit skill)"]
+```
+
+1. **Spin Up Shared Infrastructure**:
+   ```bash
+   # From root WikiMe/
+   docker compose up -d
+   ```
+2. **Launch Application Services**:
+   Engineers run services directly on the host machine using hot-reloading dev servers connected to the unified local infrastructure:
+   ```bash
+   # Terminal 1: Frontend (wikime-web)
+   cd services/wikime-web && pnpm dev
+
+   # Terminal 2: API Gateway (wikime-backend)
+   cd services/wikime-backend && poetry run uvicorn app.main:app --reload --port 8000
+
+   # Terminal 3: AI Gateway (wikime-ai)
+   cd services/wikime-ai && poetry run uvicorn app.main:app --reload --port 8001
+   ```
+3. **Commit Child Service Work**:
+   When finishing a feature in `wikime-web`, commit within that service repo:
+   ```bash
+   cd services/wikime-web
+   git add .
+   git commit -m "feat(ui): add quick capture bar with optimistic feedback"
+   git push origin feature/quick-capture
+   ```
+4. **Update Workspace State**:
+   When completing a task checkpoint, update `SPRINT.md` and `docs/PROGRESS.md` in the root `WikiMe/` repo and commit following the project's standard `git-commit` protocol.
+
+---
+
 ---
 
 # System Implementation Phases & Steps
@@ -1579,3 +1740,10 @@ A secure, collaborative enterprise second brain where organizations can create t
   - [x] Define inter-service communication protocols (HTTP/2 SSE, gRPC, RESP3, native Qdrant gRPC)
   - [x] Document 3-stage phased roadmap (Stage 1: Core Web MVP, Stage 2: Deep Extraction, Stage 3: Mobile Ecosystem)
   - [x] Synchronize PlantUML architecture diagram with web-first client and microservice boundaries
+
+- [x] **V1_007: Local Workspace Orchestration & Multi-Repo Services Setup**
+  - [x] Document Pattern A (Central Workspace / Umbrella Architecture) in docs/PROGRESS.md Section 8.6
+  - [x] Update root .gitignore to ignore /services/*, keeping nested service repositories decoupled
+  - [x] Create services/ directory structure with 4 target folders: wikime-web, wikime-backend, wikime-ai, wikime-db
+  - [x] Bind / clone frontend repository (git@github.com:SiddhantDeshwal1/wikime-web.git) into services/wikime-web
+  - [x] Configure root local developer orchestration (docker-compose.yml) for shared infrastructure
